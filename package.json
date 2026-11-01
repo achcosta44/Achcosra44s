@@ -9,11 +9,13 @@
     "db:migrate:local": "wrangler d1 migrations apply consultorio-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply consultorio-db --remote",
     "db:backup": "wrangler d1 export consultorio-db --remote --output=backup-$(date +%Y%m%d-%H%M).sql",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:celular": "node scripts/build-celular.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261001.1",
     "typescript": "^5.9.0",
-    "wrangler": "^4.150.0"
+    "wrangler": "^4.150.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

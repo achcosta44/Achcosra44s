@@ -45,7 +45,11 @@ function avisar(msg, falha = false) {
   avisar.t = setTimeout(() => (el.className = "aviso"), falha ? 6000 : 2500);
 }
 
+// No modo celular (arquivo único), as rotas são atendidas localmente pelo IndexedDB.
+const local = window.consultorioBackend;
+
 async function api(metodo, caminho, corpo) {
+  if (local) return local.request(metodo, caminho, corpo);
   const opts = { method: metodo, headers: {}, credentials: "same-origin" };
   if (corpo instanceof FormData) opts.body = corpo;
   else if (corpo !== undefined) {
@@ -61,6 +65,17 @@ async function api(metodo, caminho, corpo) {
     throw e;
   }
   return dados;
+}
+
+function baixarArquivo(blob, nome) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 let cachePacientes = null;
@@ -481,8 +496,8 @@ async function abaProntuario(p) {
         ? `<table><thead><tr><th>Arquivo</th><th>Descrição</th><th class="num">Tamanho</th><th>Enviado</th></tr></thead><tbody>
         ${anexos
           .map(
-            (a) => `<tr><td><a href="/api/anexos/${a.id}">${esc(a.nome_arquivo)}</a></td><td>${esc(a.descricao)}</td>
-              <td class="num">${(a.tamanho_bytes / 1024).toFixed(0)} KB</td>
+            (a) => `<tr><td><a href="/api/anexos/${a.id}" data-anexo="${a.id}">${esc(a.nome_arquivo)}</a></td><td>${esc(a.descricao)}</td>
+              <td class="num">${a.tamanho_bytes < 1024 ? "< 1" : (a.tamanho_bytes / 1024).toFixed(0)} KB</td>
               <td>${fmtUtc(a.criado_em)}<br><span class="suave">${esc(a.autor_email)}</span></td></tr>`,
           )
           .join("")}</tbody></table>`
@@ -490,7 +505,17 @@ async function abaProntuario(p) {
     }`;
   const recarregar = () => abaProntuario(p);
   $("#nova").onclick = () => novaEvolucao(p.id, {}, recarregar);
-  $("#aba").onclick = (ev) => {
+  $("#aba").onclick = async (ev) => {
+    if (ev.target.dataset?.anexo && local) {
+      ev.preventDefault();
+      try {
+        const { blob, nome } = await local.baixarAnexo(ev.target.dataset.anexo);
+        baixarArquivo(blob, nome);
+      } catch (e) {
+        avisar(e.message, true);
+      }
+      return;
+    }
     const id = ev.target.dataset?.retificar;
     if (id) {
       const orig = evolucoes.find((e) => e.id === Number(id));
@@ -798,7 +823,47 @@ function telaExcel() {
       <p>Use o modelo (ou uma planilha exportada daqui). Abas lidas: <strong>Pacientes</strong>, <strong>Agenda</strong> e <strong>Pagamentos</strong>.</p>
       <input type="file" id="arquivo" accept=".xlsx,.xls,.csv" style="width:auto">
       <div id="previa"></div>
-    </div>`;
+    </div>
+    ${
+      local
+        ? `<div class="cartao" style="margin-top:16px">
+      <h2 style="margin-top:0">Cópia de segurança completa</h2>
+      <p>Os dados ficam <strong>somente neste aparelho</strong>. Se o celular for perdido, trocado ou o navegador for limpo, eles se perdem.
+      Gere uma cópia com frequência e guarde em local seguro (computador, pen drive). A cópia inclui prontuário e anexos.</p>
+      <p class="suave" id="infoBackup"></p>
+      <div class="barra"><button id="backup">Gerar cópia de segurança</button>
+        <label class="botao secundario">Restaurar cópia<input type="file" id="restaurar" accept=".json,application/json" hidden></label></div>
+    </div>`
+        : ""
+    }`;
+
+  if (local) {
+    local.ultimoBackup().then((d) => {
+      $("#infoBackup").textContent = d ? `Última cópia: ${new Date(d).toLocaleString("pt-BR")}` : "Nenhuma cópia gerada ainda.";
+    });
+    $("#backup").onclick = async () => {
+      try {
+        const b = await local.gerarBackup();
+        baixarArquivo(new Blob([JSON.stringify(b)], { type: "application/json" }), `consultorio-backup-${hoje()}.json`);
+        avisar("Cópia gerada. Guarde o arquivo em local seguro.");
+        telaExcel();
+      } catch (e) {
+        avisar(e.message, true);
+      }
+    };
+    $("#restaurar").onchange = async (ev) => {
+      const f = ev.target.files[0];
+      if (!f) return;
+      if (!confirm("Restaurar SUBSTITUI todos os dados atuais deste aparelho pelos da cópia. Continuar?")) return;
+      try {
+        const r = await local.restaurar(JSON.parse(await f.text()));
+        cachePacientes = null;
+        avisar(`Cópia restaurada (${r.pacientes} pacientes).`);
+      } catch (e) {
+        avisar(e.message || "Arquivo inválido", true);
+      }
+    };
+  }
 
   $("#exportar").onclick = async () => {
     try {
@@ -865,7 +930,14 @@ async function telaAuditoria() {
 
 // ------------------------------------------------------------ roteador
 
-async function rotear() {
+// Trocas de tela em fila: evita que uma tela lenta termine de carregar por cima da seguinte.
+let filaTelas = Promise.resolve();
+function rotear() {
+  filaTelas = filaTelas.then(rotearAgora, rotearAgora);
+  return filaTelas;
+}
+
+async function rotearAgora() {
   const [, rota = "agenda", id] = location.hash.replace(/^#/, "").split("/");
   document.querySelectorAll("#menu a").forEach((a) =>
     a.classList.toggle("ativo", a.dataset.rota === rota || (rota === "paciente" && a.dataset.rota === "pacientes")),
@@ -890,4 +962,19 @@ window.addEventListener("hashchange", rotear);
 api("GET", "/api/eu")
   .then((r) => ($("#usuario").textContent = r.usuario))
   .catch(() => {});
+
+// Modo celular: proteger o armazenamento e lembrar de fazer cópia de segurança.
+if (local) {
+  local.protegerArmazenamento();
+  local.ultimoBackup().then((d) => {
+    const dias = d ? (Date.now() - new Date(d)) / 86400000 : Infinity;
+    if (dias > 7) {
+      const aviso = document.createElement("div");
+      aviso.className = "faixa-backup";
+      aviso.innerHTML = `${d ? `Última cópia de segurança há ${Math.floor(dias)} dias.` : "Nenhuma cópia de segurança feita ainda."}
+        <a href="#/excel">Fazer agora</a>`;
+      document.body.insertBefore(aviso, $("main"));
+    }
+  });
+}
 rotear();

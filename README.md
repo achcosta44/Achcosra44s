@@ -1,6 +1,33 @@
 # Consultório – pacientes, agenda, pagamentos e prontuário
 
-Aplicativo web hospedado na Cloudflare, com importação/exportação de planilhas Excel.
+O app tem duas formas de uso, com as mesmas telas:
+
+1. **Celular, sem nuvem**: um único arquivo `dist/consultorio.html`. Os dados ficam só no navegador do aparelho.
+2. **Cloudflare** (opcional): servidor com banco D1. Descrito mais abaixo.
+
+## Versão celular (sem nuvem)
+
+`dist/consultorio.html` tem tudo embutido: telas, biblioteca de Excel e banco local (IndexedDB do navegador). Funciona sem internet e não envia dados a lugar nenhum.
+
+**Gerar o arquivo** (só depois de mudar o código):
+
+```bash
+npm install
+npm run build:celular     # gera dist/consultorio.html
+```
+
+**Levar ao celular:** copie `dist/consultorio.html` para o aparelho (cabo USB, Google Drive, e-mail para si mesmo etc.) e abra no navegador.
+
+- **Android:** abra o arquivo no Chrome. Os dados ficam ligados ao endereço pelo qual o arquivo foi aberto. Sempre abra pelo mesmo caminho (de preferência salve como favorito). Antes de usar com pacientes reais, faça o teste: cadastre um paciente fictício, feche o navegador, reabra o arquivo e confira se ele continua lá.
+- **iPhone:** o iOS não executa um HTML aberto pelo app Arquivos de forma que guarde dados. É preciso abrir o arquivo a partir de um endereço web (ver "Próximos passos").
+
+**Cópia de segurança — indispensável.** Os dados existem só naquele navegador. Se o celular for perdido, trocado, resetado, ou se os dados do navegador forem limpos, tudo se perde. Na tela **Excel → Cópia de segurança completa**:
+
+- *Gerar cópia* baixa um `.json` com tudo, inclusive prontuário e anexos. Guarde no computador ou num pen drive.
+- *Restaurar cópia* substitui todos os dados do aparelho pelos da cópia. Serve também para passar os dados a um celular novo.
+- O app mostra um aviso quando a última cópia tem mais de 7 dias.
+
+**Segurança:** o arquivo de cópia e a planilha com prontuário contêm dados sensíveis de saúde, sem criptografia. Use bloqueio de tela no celular e guarde as cópias em local protegido.
 
 | Peça | Serviço Cloudflare | Onde está no projeto |
 |---|---|---|
@@ -90,9 +117,15 @@ src/auth.ts                             validação do token do Cloudflare Acces
 src/api.ts                              regras de negócio de cada rota
 src/validacao.ts                        validação de campos (datas, valores em R$, opções)
 public/                                 telas (index.html, app.js, style.css)
+celular/backend-local.js                versão celular: mesmas rotas, gravando no IndexedDB
+scripts/build-celular.mjs               gera dist/consultorio.html (arquivo único)
+dist/consultorio.html                   app pronto para o celular
 ```
 
 ## Próximos passos (a definir)
+
+- iPhone / ícone na tela inicial: hospedar apenas o arquivo HTML (ex.: GitHub Pages) com funcionamento offline. Os dados continuariam só no aparelho; a hospedagem serve apenas para entregar o arquivo.
+- Senha para abrir o app e cópia de segurança criptografada.
 
 - Ajustar campos e importação ao modelo da planilha atual.
 - Campos do prontuário conforme a profissão (anamnese, hipótese diagnóstica, plano terapêutico etc.).

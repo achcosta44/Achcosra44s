@@ -120,6 +120,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .4); }
 dialog h2 { margin-top: 0; }
 .acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
+.faixa-backup { background: var(--alerta); color: #fff; padding: 8px 16px; text-align: center; font-size: 14px; }
+.faixa-backup a { color: #fff; font-weight: 700; margin-left: 8px; }
 .erro { color: var(--perigo); }
 .suave { color: var(--suave); }
 .carregando { color: var(--suave); }
@@ -131,6 +133,8 @@ dialog h2 { margin-top: 0; }
   .topo { gap: 10px; }
   .usuario { display: none; }
   .semana { grid-template-columns: 1fr; }
+  .dia { min-height: 0; }
+  main { padding: 14px 12px 60px; }
 }
 @media print {
   .topo, .barra, .abas, button { display: none !important; }
