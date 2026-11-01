@@ -10,7 +10,12 @@
     "db:migrate:remote": "wrangler d1 migrations apply consultorio-db --remote",
     "db:backup": "wrangler d1 export consultorio-db --remote --output=backup-$(date +%Y%m%d-%H%M).sql",
     "typecheck": "tsc --noEmit",
-    "build:celular": "node scripts/build-celular.mjs"
+    "build:celular": "node scripts/build-celular.mjs",
+    "sync:dev": "cd sync && wrangler d1 migrations apply consultorio-sync --local && wrangler dev --port 8788",
+    "sync:deploy": "cd sync && wrangler deploy",
+    "dados-teste": "node scripts/gerar-dados-teste.mjs",
+    "test:offline": "node tests/fluxo-offline.cjs",
+    "test:sync": "node tests/sincronizacao.cjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261001.1",
