@@ -55,6 +55,7 @@ Leia este arquivo inteiro antes de mexer no código. Ele resume o que o app faz,
 | `tests/fluxo-offline.cjs`, `tests/sincronizacao.cjs` | Testes ponta a ponta com Playwright (seção 10). |
 | `src/`, `migrations/`, `wrangler.jsonc` (raiz) | Versão servidor completa, com login Cloudflare Access. **Não está em uso** (ver seção 2). |
 | `README.md` | Instruções para humanos: rodar, publicar, LGPD. |
+| `docs/GUIA-CONECTAR-REPOSITORIO.md` | Como ajudar uma nova pessoa a acessar o repositório (claude.ai/code, Claude Code local ou chat) e obter permissão de gravação. |
 
 ## 5. Modelo de dados (IndexedDB `consultorio`, versão 2)
 
