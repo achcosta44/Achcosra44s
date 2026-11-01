@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "consultorio",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+
+  // Telas (HTML/JS/CSS) servidas como arquivos estáticos; /api/* passa pelo Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Banco de dados (SQLite). Rode `npx wrangler d1 create consultorio-db`
+  // e cole aqui o database_id retornado.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "consultorio-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Anexos do prontuário. Rode `npx wrangler r2 bucket create consultorio-anexos`.
+  "r2_buckets": [
+    { "binding": "ANEXOS", "bucket_name": "consultorio-anexos" }
+  ],
+
+  "vars": {
+    // Ex.: "meuconsultorio.cloudflareaccess.com" (Zero Trust > Settings > Custom Pages)
+    "ACCESS_TEAM_DOMAIN": "",
+    // "Application Audience (AUD) Tag" da aplicação criada no Cloudflare Access
+    "ACCESS_AUD": "",
+    // E-mails autorizados, separados por vírgula
+    "ALLOWED_EMAILS": "",
+    // Nunca "true" em produção. Para desenvolvimento local use o arquivo .dev.vars
+    "DEV_AUTH_BYPASS": "false"
+  },
+
+  "observability": { "enabled": true }
+}

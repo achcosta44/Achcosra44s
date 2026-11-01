@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Consultório</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topo">
+    <a class="marca" href="#/agenda">Consultório</a>
+    <nav id="menu">
+      <a href="#/agenda" data-rota="agenda">Agenda</a>
+      <a href="#/pacientes" data-rota="pacientes">Pacientes</a>
+      <a href="#/financeiro" data-rota="financeiro">Financeiro</a>
+      <a href="#/excel" data-rota="excel">Excel</a>
+      <a href="#/auditoria" data-rota="auditoria">Auditoria</a>
+    </nav>
+    <span id="usuario" class="usuario"></span>
+  </header>
+
+  <main id="conteudo"><p class="carregando">Carregando…</p></main>
+
+  <dialog id="dialogo">
+    <form method="dialog" id="dialogo-form">
+      <h2 id="dialogo-titulo"></h2>
+      <div id="dialogo-campos"></div>
+      <p id="dialogo-erro" class="erro" hidden></p>
+      <div class="acoes">
+        <button type="button" class="secundario" id="dialogo-cancelar">Cancelar</button>
+        <button type="submit" id="dialogo-salvar">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
