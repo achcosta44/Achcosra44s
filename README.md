@@ -5,6 +5,38 @@ O app tem duas formas de uso, com as mesmas telas:
 1. **Celular, sem nuvem**: um único arquivo `dist/consultorio.html`. Os dados ficam só no navegador do aparelho.
 2. **Cloudflare** (opcional): servidor com banco D1. Descrito mais abaixo.
 
+## Sincronização entre notebook e celular (criptografia ponta a ponta)
+
+O mesmo `dist/consultorio.html` pode sincronizar vários aparelhos. Cada aparelho continua com todos os dados localmente e funciona sem internet. As alterações são enviadas e recebidas automaticamente: alguns segundos depois de cada mudança, a cada 30 s, ao voltar a internet e ao reabrir o app.
+
+**Privacidade:** antes de sair do aparelho, cada registro é criptografado com AES-256-GCM. A chave é derivada da senha do usuário (PBKDF2-SHA256, 600 mil iterações). O servidor (`sync/`) recebe apenas o código do cofre, um token derivado da senha (guardado só como hash) e dados cifrados. Sem a senha, ninguém lê os dados: nem a Cloudflare, nem o administrador do servidor.
+- **Esqueceu a senha?** Os dados do servidor ficam irrecuperáveis. Mantenha as cópias de segurança em dia.
+
+**Conflitos:** se o mesmo cadastro, sessão ou pagamento for alterado nos dois aparelhos, prevalece a alteração mais recente. Registros de prontuário e de auditoria nunca são alterados, só acrescentados, então nunca se perdem.
+
+**Anexos:** vão cifrados para o servidor. No outro aparelho, o arquivo só é baixado quando aberto (economiza espaço no celular). Para isso, é preciso internet na primeira abertura.
+
+### Publicar o servidor de sincronização (uma vez)
+
+```bash
+npm install
+cd sync
+npx wrangler login
+npx wrangler d1 create consultorio-sync              # copie o database_id para sync/wrangler.jsonc
+npx wrangler r2 bucket create consultorio-sync-arquivos
+npx wrangler d1 migrations apply consultorio-sync --remote
+npx wrangler deploy                                  # mostra o endereço, ex.: https://consultorio-sync.<conta>.workers.dev
+cd ..
+SYNC_URL=https://consultorio-sync.<conta>.workers.dev npm run build:celular   # embute o endereço no app
+```
+
+`MAX_COFRES` (em `sync/wrangler.jsonc`) limita quantos cofres podem ser criados no servidor. O padrão é 2, o que impede o uso por terceiros.
+
+### Ativar nos aparelhos
+
+1. **No notebook**, que tem os dados: *Backup → Ativar neste aparelho*. Crie uma senha forte e **anote o código do cofre** que aparecer.
+2. **No celular:** *Backup → Conectar a uma sincronização existente*. Informe o código e a senha. Os dados do celular são substituídos pelos do cofre; antes disso, uma cópia é baixada automaticamente.
+
 ## Versão celular (sem nuvem)
 
 `dist/consultorio.html` tem tudo embutido: telas, biblioteca de Excel e banco local (IndexedDB do navegador). Funciona sem internet e não envia dados a lugar nenhum.

@@ -1,0 +1,26 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "consultorio-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+
+  // Rode `npx wrangler d1 create consultorio-sync` e cole aqui o database_id.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "consultorio-sync",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Rode `npx wrangler r2 bucket create consultorio-sync-arquivos`.
+  "r2_buckets": [{ "binding": "ARQUIVOS", "bucket_name": "consultorio-sync-arquivos" }],
+
+  "vars": {
+    // Quantos cofres podem ser criados neste servidor (evita uso por terceiros).
+    "MAX_COFRES": "2"
+  },
+
+  "observability": { "enabled": true }
+}

@@ -1,6 +1,7 @@
 // "Servidor" local: implementa as mesmas rotas de /api usadas pelas telas,
-// mas guardando tudo no IndexedDB do próprio navegador do celular.
-// Nenhum dado sai do aparelho.
+// guardando tudo no IndexedDB do próprio navegador.
+// Opcionalmente sincroniza entre aparelhos, enviando apenas dados criptografados
+// com a senha do usuário (ver seção "sincronização" no fim do arquivo).
 (() => {
   "use strict";
 
@@ -11,14 +12,19 @@
   let dbPromise;
   function abrirDb() {
     dbPromise ??= new Promise((ok, falha) => {
-      const req = indexedDB.open("consultorio", 1);
-      req.onupgradeneeded = () => {
+      const req = indexedDB.open("consultorio", 2);
+      req.onupgradeneeded = (ev) => {
         const db = req.result;
-        for (const s of STORES) db.createObjectStore(s, { keyPath: "id", autoIncrement: true });
-        db.createObjectStore("config", { keyPath: "chave" });
+        if (ev.oldVersion < 1) {
+          for (const s of STORES) db.createObjectStore(s, { keyPath: "id", autoIncrement: true });
+          db.createObjectStore("config", { keyPath: "chave" });
+        }
+        // v2: fila de alterações ainda não enviadas à sincronização
+        if (ev.oldVersion < 2) db.createObjectStore("pendentes", { keyPath: "chave" });
       };
       req.onsuccess = () => ok(req.result);
       req.onerror = () => falha(new Error("Não foi possível abrir o armazenamento do navegador: " + req.error));
+      req.onblocked = () => falha(new Error("Feche outras abas do app e recarregue a página."));
     });
     return dbPromise;
   }
@@ -42,14 +48,33 @@
   const config = (chave) => tx(["config"], "readonly", (os) => prom(os("config").get(chave))).then((r) => r?.valor);
   const salvarConfig = (chave, valor) => tx(["config"], "readwrite", (os) => prom(os("config").put({ chave, valor })));
 
-  async function inserir(s, obj) {
-    const id = await tx([s], "readwrite", (os) => prom(os(s).add(obj)));
-    return { ...obj, id };
+  // Identificadores únicos entre aparelhos (sem colisão quando dois aparelhos criam registros).
+  // Inteiros < 2^53 para continuar compatíveis com as telas.
+  let ultimoId = 0;
+  function novoId() {
+    const base = Math.floor(Date.now() / 1000) * 1e6 + Math.floor(Math.random() * 1e6);
+    ultimoId = Math.max(base, ultimoId + 1);
+    return ultimoId;
   }
-  async function gravar(s, obj) {
-    await tx([s], "readwrite", (os) => prom(os(s).put(obj)));
-    return obj;
+  // Versão do registro: usada para decidir qual alteração vale quando dois aparelhos mexem no mesmo item.
+  let ultimaRev = 0;
+  const novaRev = () => (ultimaRev = Math.max(Date.now(), ultimaRev + 1));
+
+  // Toda gravação marca o registro como pendente de envio, na mesma transação.
+  async function salvarRegistro(s, obj, modo) {
+    const reg = { ...obj, _rev: novaRev() };
+    if (modo === "inserir" && reg.id == null) reg.id = novoId();
+    await tx([s, "pendentes"], "readwrite", (os) => {
+      os(s)[modo === "inserir" ? "add" : "put"](reg);
+      os("pendentes").put({ chave: `${s}:${reg.id}`, store: s, id: reg.id, rev: reg._rev });
+    });
+    aoAlterar();
+    return reg;
   }
+  const inserir = (s, obj) => salvarRegistro(s, obj, "inserir");
+  const gravar = (s, obj) => salvarRegistro(s, obj, "gravar");
+
+  let aoAlterar = () => {}; // substituído pela sincronização
 
   // ---------------------------------------------------------- utilidades
   class ErroHttp extends Error {
@@ -451,6 +476,7 @@
     const dados = {};
     for (const s of STORES) dados[s] = await todos(s);
     for (const a of dados.anexos) {
+      if (!a.conteudo) a.conteudo = await baixarConteudoRemoto(a).catch(() => null);
       a.conteudo_base64 = a.conteudo ? await blobParaB64(a.conteudo) : null;
       delete a.conteudo;
     }
@@ -460,6 +486,9 @@
   }
 
   async function restaurar(backup) {
+    if (await config("sync")) {
+      throw new ErroHttp(409, "A sincronização está ativa. Desconecte este aparelho da sincronização antes de restaurar uma cópia.");
+    }
     if (backup?.formato !== "consultorio-backup" || !backup.dados) throw new ErroHttp(400, "Arquivo não é um backup deste aplicativo");
     const d = backup.dados;
     for (const a of d.anexos ?? []) {
@@ -600,7 +629,15 @@
 
   async function baixarAnexo(id) {
     const a = await um("anexos", Number(id));
-    if (!a || !a.conteudo) throw new ErroHttp(404, "Anexo não encontrado");
+    if (!a) throw new ErroHttp(404, "Anexo não encontrado");
+    if (!a.conteudo) {
+      try {
+        a.conteudo = await baixarConteudoRemoto(a);
+      } catch (e) {
+        throw new ErroHttp(503, "Este anexo foi enviado por outro aparelho e ainda não foi baixado. Conecte-se à internet e tente de novo.");
+      }
+      if (!a.conteudo) throw new ErroHttp(404, "Arquivo do anexo não encontrado");
+    }
     await auditar("leitura", "anexo", a.id, a.nome_arquivo);
     return { blob: a.conteudo, nome: a.nome_arquivo };
   }
@@ -616,6 +653,302 @@
     }
   }
 
+
+  // ================================================================ sincronização
+  // Modelo: cada aparelho mantém todos os dados localmente e funciona sem internet.
+  // Ao alterar um registro, ele entra na fila "pendentes". Quando há conexão:
+  //   1) envia os pendentes, cada um criptografado (AES-256-GCM) com a chave derivada da senha;
+  //   2) baixa as alterações dos outros aparelhos, decifra e aplica.
+  // Conflito (mesmo registro alterado nos dois aparelhos): vale a alteração mais recente (_rev).
+  // Prontuário e auditoria só recebem inclusões, então nunca há sobrescrita nesses registros.
+  // O servidor só vê textos cifrados; a senha e a chave nunca saem do aparelho.
+
+  const te = new TextEncoder();
+  const td = new TextDecoder();
+  const ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytesParaB64 = (u8) => {
+    let s = "";
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+    return btoa(s);
+  };
+  const b64ParaBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const hex = (u8) => [...u8].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  function gerarCodigoCofre() {
+    const r = crypto.getRandomValues(new Uint8Array(12));
+    const c = [...r].map((b) => ALFABETO[b % ALFABETO.length]).join("");
+    return `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8, 12)}`;
+  }
+  const normalizarCodigo = (c) => {
+    const l = String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return l.length === 12 ? `${l.slice(0, 4)}-${l.slice(4, 8)}-${l.slice(8, 12)}` : null;
+  };
+
+  // Senha -> (chave de criptografia, token de acesso ao servidor). PBKDF2-SHA256, 600 mil iterações.
+  async function derivar(senha, cofre) {
+    if (!crypto.subtle) throw new ErroHttp(400, "Este navegador não oferece criptografia. Atualize o navegador.");
+    const base = await crypto.subtle.importKey("raw", te.encode(senha), "PBKDF2", false, ["deriveBits"]);
+    const bits = new Uint8Array(
+      await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: te.encode("consultorio-sync:" + cofre), iterations: 600000 }, base, 512),
+    );
+    const chave = await crypto.subtle.importKey("raw", bits.slice(0, 32), "AES-GCM", false, ["encrypt", "decrypt"]);
+    return { chave, token: hex(bits.slice(32)) };
+  }
+
+  async function cifrar(chave, bytes) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, chave, bytes));
+    const out = new Uint8Array(12 + ct.length);
+    out.set(iv);
+    out.set(ct, 12);
+    return out;
+  }
+  async function decifrar(chave, bytes) {
+    return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, chave, bytes.slice(12)));
+  }
+
+  const estado = { situacao: "desligada", pendentes: 0, ultima: null, erro: null };
+  function publicarEstado(mudou = {}) {
+    Object.assign(estado, mudou);
+    window.dispatchEvent(new CustomEvent("consultorio:sync", { detail: { ...estado } }));
+  }
+
+  async function chamar(cfg, metodo, caminho, corpo, binario = false) {
+    const headers = { Authorization: `Bearer ${cfg.cofre}:${cfg.token}` };
+    let body;
+    if (corpo instanceof Uint8Array) body = corpo;
+    else if (corpo !== undefined) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(corpo);
+    }
+    let r;
+    try {
+      r = await fetch(cfg.servidor.replace(/\/+$/, "") + caminho, { method: metodo, headers, body });
+    } catch {
+      throw Object.assign(new Error("Sem conexão com o servidor de sincronização"), { offline: true });
+    }
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw Object.assign(new Error(d.erro || `Erro ${r.status} no servidor`), { status: r.status });
+    }
+    return binario ? new Uint8Array(await r.arrayBuffer()) : r.json();
+  }
+
+  async function baixarConteudoRemoto(a) {
+    const cfg = await config("sync");
+    if (!cfg) return null;
+    const bytes = await decifrar(cfg.chave, await chamar(cfg, "GET", `/v1/arquivos/${a.id}`, undefined, true));
+    const blob = new Blob([bytes], { type: a.tipo_mime });
+    // guarda localmente (sem gerar nova pendência)
+    await tx(["anexos"], "readwrite", async (os) => {
+      const atual = await prom(os("anexos").get(a.id));
+      if (atual && !atual.conteudo) os("anexos").put({ ...atual, conteudo: blob, _enviado: true });
+    });
+    return blob;
+  }
+
+  // Envia a fila de pendentes
+  async function enviar(cfg) {
+    const fila = await todos("pendentes");
+    publicarEstado({ pendentes: fila.length });
+    for (let i = 0; i < fila.length; i += 50) {
+      const lote = fila.slice(i, i + 50);
+      const itens = [];
+      for (const p of lote) {
+        const reg = await um(p.store, p.id);
+        if (!reg) continue;
+        const copia = { ...reg };
+        if (p.store === "anexos") {
+          if (copia.conteudo && !copia._enviado) {
+            const bytes = new Uint8Array(await copia.conteudo.arrayBuffer());
+            await chamar(cfg, "PUT", `/v1/arquivos/${copia.id}`, await cifrar(cfg.chave, bytes));
+            await tx(["anexos"], "readwrite", (os) => os("anexos").put({ ...reg, _enviado: true }));
+          }
+          delete copia.conteudo;
+          delete copia._enviado;
+        }
+        const dado = await cifrar(cfg.chave, te.encode(JSON.stringify({ s: p.store, r: copia })));
+        itens.push(bytesParaB64(dado));
+      }
+      if (itens.length) await chamar(cfg, "POST", "/v1/mudancas", { dispositivo: cfg.dispositivo, itens });
+      // remove da fila só o que não mudou enquanto enviávamos
+      await tx(["pendentes"], "readwrite", async (os) => {
+        for (const p of lote) {
+          const atual = await prom(os("pendentes").get(p.chave));
+          if (atual && atual.rev === p.rev) os("pendentes").delete(p.chave);
+        }
+      });
+    }
+  }
+
+  // Baixa e aplica alterações dos outros aparelhos
+  async function receber(cfg) {
+    let desde = (await config("sync_seq")) || 0;
+    let aplicados = 0;
+    for (;;) {
+      const r = await chamar(cfg, "GET", `/v1/mudancas?desde=${desde}&limite=500`);
+      const regs = [];
+      for (const it of r.itens) {
+        try {
+          regs.push(JSON.parse(td.decode(await decifrar(cfg.chave, b64ParaBytes(it.dado)))));
+        } catch {
+          throw new Error("Não foi possível decifrar dados recebidos. A senha deste aparelho está diferente da usada nos outros?");
+        }
+      }
+      if (regs.length) {
+        aplicados += await tx([...STORES, "pendentes"], "readwrite", async (os) => {
+          let n = 0;
+          for (const { s, r: reg } of regs) {
+            if (!STORES.includes(s) || reg?.id == null) continue;
+            const local = await prom(os(s).get(reg.id));
+            if (local && (local._rev ?? 0) >= (reg._rev ?? 0)) continue; // local é igual ou mais novo
+            const novo = { ...reg };
+            if (s === "anexos" && local?.conteudo) Object.assign(novo, { conteudo: local.conteudo, _enviado: true });
+            if (s === "anexos" && !local) novo._enviado = true; // conteúdo já está no servidor
+            os(s).put(novo);
+            os("pendentes").delete(`${s}:${reg.id}`); // alteração local mais antiga perdeu
+            ultimaRev = Math.max(ultimaRev, reg._rev ?? 0);
+            n++;
+          }
+          return n;
+        });
+      }
+      desde = r.ultimo_seq;
+      await salvarConfig("sync_seq", desde);
+      if (!r.mais) break;
+    }
+    return aplicados;
+  }
+
+  let rodando = null;
+  let deNovo = false;
+  async function sincronizar() {
+    if (rodando) {
+      deNovo = true;
+      return rodando;
+    }
+    rodando = (async () => {
+      const cfg = await config("sync");
+      if (!cfg) return publicarEstado({ situacao: "desligada" });
+      do {
+        deNovo = false;
+        publicarEstado({ situacao: "sincronizando" });
+        try {
+          await enviar(cfg);
+          const n = await receber(cfg);
+          const pend = (await todos("pendentes")).length;
+          const ultima = new Date().toISOString();
+          await salvarConfig("sync_ultima", ultima);
+          publicarEstado({ situacao: "ok", pendentes: pend, ultima, erro: null });
+          if (n > 0) window.dispatchEvent(new CustomEvent("consultorio:dados-recebidos", { detail: { n } }));
+        } catch (e) {
+          const pend = (await todos("pendentes")).length;
+          publicarEstado({ situacao: e.offline ? "offline" : "erro", pendentes: pend, erro: e.message });
+          break;
+        }
+      } while (deNovo);
+    })().finally(() => (rodando = null));
+    return rodando;
+  }
+
+  let temporizador = null;
+  aoAlterar = () => {
+    publicarEstado({ pendentes: estado.pendentes + 1 });
+    clearTimeout(temporizador);
+    temporizador = setTimeout(sincronizar, 1500);
+  };
+
+  async function iniciarSync() {
+    const cfg = await config("sync");
+    if (!cfg) return publicarEstado({ situacao: "desligada" });
+    estado.ultima = await config("sync_ultima");
+    estado.pendentes = (await todos("pendentes")).length;
+    sincronizar();
+    if (iniciarSync.feito) return;
+    iniciarSync.feito = true;
+    setInterval(sincronizar, 30000);
+    window.addEventListener("online", sincronizar);
+    document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && sincronizar());
+  }
+
+  async function quantidadeLocal() {
+    return (await todos("pacientes")).length + (await todos("evolucoes")).length + (await todos("agendamentos")).length;
+  }
+
+  // Primeiro aparelho: cria o cofre e envia tudo o que já existe.
+  async function criarSync(servidor, senha) {
+    if (!servidor) throw new ErroHttp(400, "Informe o endereço do servidor de sincronização");
+    if (!senha || senha.length < 10) throw new ErroHttp(400, "Use uma senha com pelo menos 10 caracteres");
+    const cofre = gerarCodigoCofre();
+    const { chave, token } = await derivar(senha, cofre);
+    const cfg = { servidor: servidor.trim(), cofre, token, chave, dispositivo: crypto.randomUUID() };
+    await fetch(cfg.servidor.replace(/\/+$/, "") + "/v1/cofres", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cofre, token }),
+    }).then(async (r) => {
+      if (!r.ok) throw new ErroHttp(r.status, (await r.json().catch(() => ({}))).erro || `Erro ${r.status}`);
+    }, () => {
+      throw new ErroHttp(503, "Não foi possível falar com o servidor. Confira o endereço e a internet.");
+    });
+    // marca tudo o que já existe para envio
+    await tx([...STORES, "pendentes"], "readwrite", async (os) => {
+      for (const s of STORES) {
+        for (const reg of await prom(os(s).getAll())) {
+          const r = { ...reg, _rev: reg._rev ?? novaRev() };
+          os(s).put(r);
+          os("pendentes").put({ chave: `${s}:${r.id}`, store: s, id: r.id, rev: r._rev });
+        }
+      }
+    });
+    await salvarConfig("sync", cfg);
+    await salvarConfig("sync_seq", 0);
+    await auditar("ativar sincronização", "sistema", null, `cofre ${cofre}`);
+    await iniciarSync();
+    await sincronizar();
+    return { cofre };
+  }
+
+  // Outro aparelho: entra no cofre existente. Os dados locais são substituídos pelos do cofre.
+  async function conectarSync(servidor, codigo, senha) {
+    const cofre = normalizarCodigo(codigo);
+    if (!cofre) throw new ErroHttp(400, "Código do cofre inválido (formato XXXX-XXXX-XXXX)");
+    if (!servidor) throw new ErroHttp(400, "Informe o endereço do servidor de sincronização");
+    const { chave, token } = await derivar(senha, cofre);
+    const cfg = { servidor: servidor.trim(), cofre, token, chave, dispositivo: crypto.randomUUID() };
+    try {
+      await chamar(cfg, "GET", "/v1/cofres/eu");
+    } catch (e) {
+      throw new ErroHttp(e.status || 503, e.status === 401 ? "Código do cofre ou senha incorretos" : e.message);
+    }
+    await tx([...STORES, "pendentes"], "readwrite", (os) => {
+      for (const s of [...STORES, "pendentes"]) os(s).clear();
+    });
+    await salvarConfig("sync", cfg);
+    await salvarConfig("sync_seq", 0);
+    await iniciarSync();
+    await sincronizar();
+    if (estado.situacao === "erro") throw new ErroHttp(500, estado.erro);
+    await auditar("conectar sincronização", "sistema", null, `cofre ${cofre}`);
+    return { cofre };
+  }
+
+  async function desconectarSync() {
+    await tx(["config"], "readwrite", (os) => {
+      os("config").delete("sync");
+      os("config").delete("sync_seq");
+      os("config").delete("sync_ultima");
+    });
+    await auditar("desconectar sincronização", "sistema", null);
+    await tx(["pendentes"], "readwrite", (os) => os("pendentes").clear());
+    publicarEstado({ situacao: "desligada", pendentes: 0, erro: null });
+  }
+
+  async function infoSync() {
+    const cfg = await config("sync");
+    return cfg
+      ? { ativa: true, cofre: cfg.cofre, servidor: cfg.servidor, ...estado, temDadosLocais: (await quantidadeLocal()) > 0 }
+      : { ativa: false, servidorPadrao: window.CONSULTORIO_SYNC_URL || "", temDadosLocais: (await quantidadeLocal()) > 0 };
+  }
+
   window.consultorioBackend = {
     request,
     baixarAnexo,
@@ -623,5 +956,7 @@
     restaurar,
     protegerArmazenamento,
     ultimoBackup: () => config("ultimo_backup"),
+    sync: { info: infoSync, criar: criarSync, conectar: conectarSync, desconectar: desconectarSync, agora: sincronizar },
   };
+  iniciarSync();
 })();

@@ -881,7 +881,8 @@ function linhasImportacao(XLSX, wb) {
 
 function telaExcel() {
   conteudo.innerHTML = `
-    <h1>Backup e planilhas</h1>
+    <h1>Sincronização e backup</h1>
+    ${local ? '<div id="sync-area"></div>' : ""}
     <div class="cartao">
       <h2 style="margin-top:0">Exportar para Excel</h2>
       <p>Gera uma planilha .xlsx com pacientes, agenda e pagamentos. Serve como backup e para trabalhar no Excel.</p>
@@ -899,8 +900,8 @@ function telaExcel() {
       local
         ? `<div class="cartao" style="margin-top:16px">
       <h2 style="margin-top:0">Cópia de segurança completa</h2>
-      <p>Os dados ficam <strong>somente neste aparelho</strong>. Se o celular for perdido, trocado ou o navegador for limpo, eles se perdem.
-      Gere uma cópia com frequência e guarde em local seguro (computador, pen drive). A cópia inclui prontuário e anexos.</p>
+      <p>Gere uma cópia com frequência e guarde fora dos aparelhos (pen drive, HD externo). Ela inclui prontuário e anexos e
+      protege contra perda do aparelho, limpeza do navegador, esquecimento da senha da sincronização ou exclusão por engano.</p>
       <p class="suave" id="infoBackup"></p>
       <div class="barra"><button id="backup">Gerar cópia de segurança</button>
         <label class="botao secundario">Restaurar cópia<input type="file" id="restaurar" accept=".json,application/json" hidden></label></div>
@@ -910,6 +911,7 @@ function telaExcel() {
     <p style="margin-top:24px"><a href="#/auditoria">Ver histórico de acessos e alterações</a></p>`;
 
   if (local) {
+    renderSync();
     local.ultimoBackup().then((d) => {
       $("#infoBackup").textContent = d ? `Última cópia: ${new Date(d).toLocaleString("pt-BR")}` : "Nenhuma cópia gerada ainda.";
     });
@@ -984,6 +986,118 @@ function telaExcel() {
   };
 }
 
+// ------------------------------------------------------------ Sincronização (modo arquivo local)
+
+const fmtQuando = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "nunca");
+const TEXTO_SYNC = {
+  ok: "Sincronizado",
+  sincronizando: "Sincronizando…",
+  offline: "Sem internet – alterações guardadas neste aparelho",
+  erro: "Erro na sincronização",
+  desligada: "Desligada",
+};
+
+async function renderSync() {
+  const area = $("#sync-area");
+  if (!area) return;
+  const i = await local.sync.info();
+  if (!area.isConnected) return; // a tela mudou enquanto consultávamos
+  const $a = (sel) => area.querySelector(sel);
+  if (!i.ativa) {
+    area.innerHTML = `<div class="cartao">
+      <h2 style="margin-top:0">Sincronizar notebook e celular</h2>
+      <p>Mantém os mesmos dados em todos os seus aparelhos. Tudo é <strong>criptografado neste aparelho com uma senha só sua</strong>
+        antes de ir para a internet: o servidor guarda apenas dados ilegíveis. Os aparelhos continuam funcionando sem internet
+        e trocam as alterações quando a conexão volta.</p>
+      <div class="barra">
+        <button id="sync-criar">Ativar neste aparelho (primeiro aparelho)</button>
+        <button class="secundario" id="sync-conectar">Conectar a uma sincronização existente</button>
+      </div>
+      <p class="suave">No primeiro aparelho, os dados atuais são enviados. Nos demais, os dados locais são substituídos pelos sincronizados.</p>
+    </div>`;
+    $a("#sync-criar").onclick = () =>
+      formulario(
+        "Ativar sincronização",
+        [
+          { nome: "servidor", rotulo: "Endereço do servidor", obrigatorio: true, largo: true, extra: 'inputmode="url" autocapitalize="off"' },
+          { nome: "senha", rotulo: "Crie uma senha (mín. 10 caracteres)", tipo: "password", obrigatorio: true, largo: true, extra: 'autocomplete="new-password" minlength="10"' },
+          { nome: "senha2", rotulo: "Repita a senha", tipo: "password", obrigatorio: true, largo: true, extra: 'autocomplete="new-password"' },
+        ],
+        { servidor: i.servidorPadrao },
+        async (d) => {
+          if (d.senha !== d.senha2) throw new Error("As senhas não conferem.");
+          const r = await local.sync.criar(d.servidor, d.senha);
+          setTimeout(() => {
+            alert(
+              `Sincronização ativada!\n\nCódigo do cofre: ${r.cofre}\n\nAnote este código e a senha em local seguro. ` +
+                `Você vai precisar dos dois para conectar o outro aparelho. Sem a senha, os dados sincronizados não podem ser recuperados.`,
+            );
+            renderSync();
+          }, 50);
+        },
+      );
+    $a("#sync-conectar").onclick = () =>
+      formulario(
+        "Conectar a uma sincronização",
+        [
+          { nome: "servidor", rotulo: "Endereço do servidor", obrigatorio: true, largo: true, extra: 'inputmode="url" autocapitalize="off"' },
+          { nome: "codigo", rotulo: "Código do cofre (XXXX-XXXX-XXXX)", obrigatorio: true, largo: true, extra: 'autocapitalize="characters" autocomplete="off"' },
+          { nome: "senha", rotulo: "Senha", tipo: "password", obrigatorio: true, largo: true, extra: 'autocomplete="current-password"' },
+        ],
+        { servidor: i.servidorPadrao },
+        async (d) => {
+          if (i.temDadosLocais) {
+            if (!confirm("Este aparelho já tem dados. Eles serão SUBSTITUÍDOS pelos dados sincronizados.\n\nUma cópia de segurança dos dados atuais será baixada antes. Continuar?")) {
+              throw new Error("Conexão cancelada.");
+            }
+            const b = await local.gerarBackup();
+            baixarArquivo(new Blob([JSON.stringify(b)], { type: "application/json" }), `consultorio-antes-de-sincronizar-${hoje()}.json`);
+          }
+          await local.sync.conectar(d.servidor, d.codigo, d.senha);
+          cachePacientes = null;
+          avisar("Aparelho conectado e dados sincronizados");
+          setTimeout(renderSync, 50);
+        },
+      );
+    return;
+  }
+  area.innerHTML = `<div class="cartao">
+    <h2 style="margin-top:0">Sincronização ativa</h2>
+    <p><span class="sync-ponto ${esc(i.situacao)}"></span> <strong>${TEXTO_SYNC[i.situacao] || esc(i.situacao)}</strong>
+      ${i.pendentes ? ` · ${i.pendentes} alteração(ões) a enviar` : ""}</p>
+    ${i.erro && i.situacao === "erro" ? `<p class="erro">${esc(i.erro)}</p>` : ""}
+    <p class="suave">Última sincronização: ${fmtQuando(i.ultima)}<br>Código do cofre: <strong>${esc(i.cofre)}</strong><br>Servidor: ${esc(i.servidor)}</p>
+    <div class="barra"><button id="sync-agora">Sincronizar agora</button>
+      <button class="secundario" id="sync-sair">Desconectar este aparelho</button></div>
+  </div>`;
+  $a("#sync-agora").onclick = async () => {
+    await local.sync.agora();
+    renderSync();
+  };
+  $a("#sync-sair").onclick = async () => {
+    if (!confirm("Desconectar este aparelho? Os dados continuam aqui, mas deixam de ser sincronizados.")) return;
+    await local.sync.desconectar();
+    renderSync();
+  };
+}
+
+if (local) {
+  const ind = $("#sync-indicador");
+  window.addEventListener("consultorio:sync", (ev) => {
+    const e = ev.detail;
+    ind.hidden = e.situacao === "desligada";
+    ind.className = `sync-indicador ${e.situacao}`;
+    ind.textContent = { ok: "Sincronizado", sincronizando: "Sincronizando…", offline: "Offline", erro: "Erro de sincronização" }[e.situacao] || "";
+    ind.title = e.situacao === "offline" ? `Sem internet. ${e.pendentes} alteração(ões) aguardando envio.` : e.erro || `Última: ${fmtQuando(e.ultima)}`;
+    if (e.situacao !== "sincronizando" && location.hash.startsWith("#/excel") && !$("#dialogo").open) renderSync();
+  });
+  // Dados chegaram de outro aparelho: atualiza a tela atual, sem atrapalhar quem está digitando.
+  window.addEventListener("consultorio:dados-recebidos", () => {
+    cachePacientes = null;
+    if (!$("#dialogo").open && !location.hash.startsWith("#/excel")) atualizarTela();
+  });
+}
+
 // ------------------------------------------------------------ Auditoria
 
 async function telaAuditoria() {
@@ -1005,18 +1119,24 @@ async function telaAuditoria() {
 // Trocas de tela em fila: evita que uma tela lenta termine de carregar por cima da seguinte.
 let filaTelas = Promise.resolve();
 function rotear() {
-  filaTelas = filaTelas.then(rotearAgora, rotearAgora);
+  filaTelas = filaTelas.then(() => rotearAgora(false), () => rotearAgora(false));
   return filaTelas;
 }
 
-async function rotearAgora() {
+function atualizarTela() {
+  filaTelas = filaTelas.then(() => rotearAgora(true), () => rotearAgora(true));
+  return filaTelas;
+}
+
+async function rotearAgora(manter = false) {
+  const y = scrollY;
   const [, rota = "agenda", id] = location.hash.replace(/^#/, "").split("/");
   document.querySelectorAll("#menu a").forEach((a) =>
     a.classList.toggle("ativo", a.dataset.rota === rota || (rota === "paciente" && a.dataset.rota === "pacientes") || (rota === "auditoria" && a.dataset.rota === "excel")),
   );
   sinalTela();
-  scrollTo(0, 0);
-  const lento = setTimeout(() => (conteudo.innerHTML = '<p class="carregando">Carregando…</p>'), 250);
+  if (!manter) scrollTo(0, 0);
+  const lento = manter ? null : setTimeout(() => (conteudo.innerHTML = '<p class="carregando">Carregando…</p>'), 250);
   try {
     if (rota === "pacientes") await telaPacientes();
     else if (rota === "paciente" && id) await telaPaciente(Number(id));
@@ -1025,6 +1145,7 @@ async function rotearAgora() {
     else if (rota === "auditoria") await telaAuditoria();
     else await telaAgenda();
     clearTimeout(lento);
+    if (manter) scrollTo(0, y);
   } catch (e) {
     clearTimeout(lento);
     conteudo.innerHTML = `<p class="erro">${esc(e.message)}</p>${
@@ -1046,7 +1167,7 @@ function rotularTabelas() {
 new MutationObserver(rotularTabelas).observe(conteudo, { childList: true, subtree: true });
 
 window.addEventListener("hashchange", rotear);
-api("GET", "/api/eu")
+if (!local) api("GET", "/api/eu")
   .then((r) => ($("#usuario").textContent = r.usuario))
   .catch(() => {});
 
