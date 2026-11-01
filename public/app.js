@@ -36,6 +36,15 @@ const FORMAS = {
   transferencia: "Transferência", convenio: "Convênio", outro: "Outro",
 };
 const STATUS_PAG = { pago: "Pago", pendente: "Pendente", cancelado: "Cancelado" };
+// Registro documental do psicólogo (Resolução CFP nº 001/2009)
+const TIPOS_REGISTRO = {
+  evolucao: "Evolução de sessão",
+  demanda: "Avaliação de demanda e objetivos",
+  encaminhamento: "Encaminhamento",
+  encerramento: "Encerramento",
+  documento: "Documento produzido",
+  outro: "Outro registro",
+};
 
 function avisar(msg, falha = false) {
   const el = $("#aviso");
@@ -243,20 +252,21 @@ function editarPagamento(p, aoSalvar) {
 function novaEvolucao(pacienteId, valores = {}, aoSalvar) {
   const retificacao = !!valores.retifica_id;
   formulario(
-    retificacao ? "Retificar evolução" : "Nova evolução",
+    retificacao ? "Retificar registro" : "Novo registro no prontuário",
     [
-      { nome: "data_atendimento", rotulo: "Data do atendimento", tipo: "date", obrigatorio: true },
-      { nome: "texto", rotulo: retificacao ? "Texto da retificação" : "Evolução", tipo: "textarea", obrigatorio: true },
+      { nome: "tipo", rotulo: "Tipo de registro", tipo: "select", opcoes: TIPOS_REGISTRO, obrigatorio: true },
+      { nome: "data_atendimento", rotulo: "Data", tipo: "date", obrigatorio: true },
+      { nome: "texto", rotulo: retificacao ? "Texto da retificação" : "Registro", tipo: "textarea", obrigatorio: true },
       { nome: "agendamento_id", rotulo: "", tipo: "hidden" },
       { nome: "retifica_id", rotulo: "", tipo: "hidden" },
     ],
-    { data_atendimento: hoje(), ...valores },
+    { data_atendimento: hoje(), tipo: "evolucao", ...valores },
     async (d) => {
-      if (!confirm("Após salvar, a evolução não poderá ser alterada nem excluída (apenas retificada). Confirmar?")) {
+      if (!confirm("Depois de salvo, o registro não pode ser alterado nem excluído (apenas retificado). Salvar?")) {
         throw new Error("Gravação cancelada.");
       }
       await api("POST", `/api/pacientes/${pacienteId}/evolucoes`, d);
-      avisar(retificacao ? "Retificação registrada" : "Evolução registrada");
+      avisar(retificacao ? "Retificação registrada" : "Registro salvo");
       aoSalvar?.();
     },
   );
@@ -264,7 +274,9 @@ function novaEvolucao(pacienteId, valores = {}, aoSalvar) {
 
 // ------------------------------------------------------------ Agenda (semana)
 
-let semanaAtual = segundaDaSemana(hoje());
+// No domingo, a agenda já mostra a semana que começa no dia seguinte.
+const semanaDeHoje = () => (new Date().getDay() === 0 ? somarDias(hoje(), 1) : segundaDaSemana(hoje()));
+let semanaAtual = semanaDeHoje();
 
 async function telaAgenda() {
   const de = semanaAtual;
@@ -282,7 +294,7 @@ async function telaAgenda() {
     <div class="semana" id="semana"><p class="carregando">Carregando…</p></div>`;
   $("#ant").onclick = () => ((semanaAtual = somarDias(semanaAtual, -7)), telaAgenda());
   $("#prox").onclick = () => ((semanaAtual = somarDias(semanaAtual, 7)), telaAgenda());
-  $("#hj").onclick = () => ((semanaAtual = segundaDaSemana(hoje())), telaAgenda());
+  $("#hj").onclick = () => ((semanaAtual = semanaDeHoje()), telaAgenda());
   $("#novo").onclick = () => novoAgendamento({}, telaAgenda);
 
   const sessoes = await api("GET", `/api/agendamentos?de=${de}&ate=${ate}`);
@@ -305,8 +317,8 @@ async function telaAgenda() {
               .map(([k, r]) => `<option value="${k}" ${k === s.status ? "selected" : ""}>${r}</option>`)
               .join("")}</select>
             <div class="acoes-sessao">
-              <button class="pequeno secundario" data-evol="${s.id}">Evolução</button>
-              <button class="pequeno secundario" data-pag="${s.id}">Pagamento</button>
+              <button class="pequeno secundario" data-evol="${s.id}" title="Registrar no prontuário">Registrar</button>
+              <button class="pequeno secundario" data-pag="${s.id}">Pagar</button>
               <button class="pequeno secundario" data-remarcar="${s.id}">Remarcar</button>
             </div>
           </div>`,
@@ -395,7 +407,7 @@ async function telaPacientes() {
 
 // ------------------------------------------------------------ Ficha do paciente
 
-async function telaPaciente(id, abaInicial = "dados") {
+async function telaPaciente(id, abaInicial = "prontuario") {
   const p = await api("GET", `/api/pacientes/${id}`);
   conteudo.innerHTML = `
     <div class="barra">
@@ -405,8 +417,8 @@ async function telaPaciente(id, abaInicial = "dados") {
       <button class="secundario" onclick="window.print()">Imprimir</button>
     </div>
     <div class="abas" id="abas">
-      <button data-aba="dados">Cadastro</button>
       <button data-aba="prontuario">Prontuário</button>
+      <button data-aba="dados">Cadastro</button>
       <button data-aba="sessoes">Sessões</button>
       <button data-aba="pagamentos">Pagamentos</button>
     </div>
@@ -471,25 +483,35 @@ async function abaProntuario(p) {
   ]);
   const retificadas = new Set(evolucoes.filter((e) => e.retifica_id).map((e) => e.retifica_id));
   $("#aba").innerHTML = `
-    <div class="barra"><h2 style="margin:0">Evoluções</h2><span class="espaco"></span><button id="nova">+ Nova evolução</button></div>
+    <div class="barra">
+      <select id="filtroTipo" style="width:auto"><option value="">Todos os registros (${evolucoes.length})</option>${Object.entries(TIPOS_REGISTRO)
+        .map(([k, r]) => {
+          const n = evolucoes.filter((e) => (e.tipo || "evolucao") === k).length;
+          return n ? `<option value="${k}">${r} (${n})</option>` : "";
+        })
+        .join("")}</select>
+      <span class="espaco"></span><button id="nova">+ Novo registro</button></div>
+    ${evolucoes.some((e) => e.tipo === "demanda") ? "" : '<p class="dica">Ainda não há <strong>avaliação de demanda e objetivos</strong> para este paciente.</p>'}
+    <div id="registros">
     ${
       evolucoes
         .map(
-          (e) => `<article class="evolucao ${retificadas.has(e.id) ? "retificada" : ""} ${e.retifica_id ? "retificacao" : ""}">
+          (e) => `<article class="evolucao ${retificadas.has(e.id) ? "retificada" : ""} ${e.retifica_id ? "retificacao" : ""}" data-tipo="${esc(e.tipo || "evolucao")}">
             <div class="meta">
               <strong>${fmtData(e.data_atendimento)}</strong>
-              <span>#${e.id}</span>
+              <span class="tipo-registro">${TIPOS_REGISTRO[e.tipo] || TIPOS_REGISTRO.evolucao}</span>
               ${e.retifica_id ? `<span class="selo pendente">retifica #${e.retifica_id}</span>` : ""}
               ${retificadas.has(e.id) ? '<span class="selo cancelado">retificada</span>' : ""}
-              <span>registrado por ${esc(e.autor_email)} em ${fmtUtc(e.criado_em)}</span>
+              <span>salvo em ${fmtUtc(e.criado_em)}</span>
               <span class="espaco"></span>
               <button class="pequeno secundario" data-retificar="${e.id}">Retificar</button>
             </div>
             <div class="texto">${esc(e.texto)}</div>
           </article>`,
         )
-        .join("") || '<p class="suave">Nenhuma evolução registrada.</p>'
+        .join("") || '<p class="suave">Nenhum registro ainda.</p>'
     }
+    </div>
     <div class="barra" style="margin-top:28px"><h2 style="margin:0">Anexos</h2><span class="espaco"></span><button id="anexar">+ Anexar arquivo</button></div>
     ${
       anexos.length
@@ -505,6 +527,8 @@ async function abaProntuario(p) {
     }`;
   const recarregar = () => abaProntuario(p);
   $("#nova").onclick = () => novaEvolucao(p.id, {}, recarregar);
+  $("#filtroTipo").onchange = (ev) =>
+    document.querySelectorAll("#registros .evolucao").forEach((a) => (a.hidden = !!ev.target.value && a.dataset.tipo !== ev.target.value));
   $("#aba").onclick = async (ev) => {
     if (ev.target.dataset?.anexo && local) {
       ev.preventDefault();
@@ -519,7 +543,7 @@ async function abaProntuario(p) {
     const id = ev.target.dataset?.retificar;
     if (id) {
       const orig = evolucoes.find((e) => e.id === Number(id));
-      novaEvolucao(p.id, { retifica_id: id, data_atendimento: orig.data_atendimento }, recarregar);
+      novaEvolucao(p.id, { retifica_id: id, data_atendimento: orig.data_atendimento, tipo: orig.tipo || "evolucao" }, recarregar);
     }
   };
   $("#anexar").onclick = () =>
@@ -706,7 +730,7 @@ const COLUNAS = {
   ],
   "Prontuário": [
     ["id", "ID"], ["paciente_id", "ID paciente"], ["paciente_nome", "Paciente"], ["data_atendimento", "Data"],
-    ["texto", "Evolução"], ["retifica_id", "Retifica ID"], ["autor_email", "Registrado por"], ["criado_em", "Registrado em (UTC)"],
+    ["tipo", "Tipo"], ["texto", "Registro"], ["retifica_id", "Retifica ID"], ["autor_email", "Registrado por"], ["criado_em", "Registrado em (UTC)"],
   ],
 };
 
@@ -731,7 +755,7 @@ function linhasExportacao(dados) {
     Pagamentos: mapear("Pagamentos", dados.pagamentos, (g) => ({ ...g, data: paraDataExcel(g.data), valor: g.valor_centavos / 100 })),
   };
   if (dados.evolucoes) {
-    abas["Prontuário"] = mapear("Prontuário", dados.evolucoes, (e) => ({ ...e, data_atendimento: paraDataExcel(e.data_atendimento) }));
+    abas["Prontuário"] = mapear("Prontuário", dados.evolucoes, (e) => ({ ...e, tipo: TIPOS_REGISTRO[e.tipo] || TIPOS_REGISTRO.evolucao, data_atendimento: paraDataExcel(e.data_atendimento) }));
   }
   return abas;
 }
@@ -810,16 +834,16 @@ function linhasImportacao(XLSX, wb) {
 
 function telaExcel() {
   conteudo.innerHTML = `
-    <h1>Excel</h1>
+    <h1>Backup e planilhas</h1>
     <div class="cartao">
-      <h2 style="margin-top:0">Exportar</h2>
+      <h2 style="margin-top:0">Exportar para Excel</h2>
       <p>Gera uma planilha .xlsx com pacientes, agenda e pagamentos. Serve como backup e para trabalhar no Excel.</p>
       <label><input type="checkbox" id="comProntuario" style="width:auto"> incluir prontuário (evoluções)</label>
       <p class="suave">Atenção: a planilha com prontuário contém dados sensíveis de saúde. Guarde-a em local protegido.</p>
       <div class="barra"><button id="exportar">Baixar planilha</button><button class="secundario" id="modelo">Baixar modelo vazio</button></div>
     </div>
     <div class="cartao" style="margin-top:16px">
-      <h2 style="margin-top:0">Importar</h2>
+      <h2 style="margin-top:0">Importar do Excel</h2>
       <p>Use o modelo (ou uma planilha exportada daqui). Abas lidas: <strong>Pacientes</strong>, <strong>Agenda</strong> e <strong>Pagamentos</strong>.</p>
       <input type="file" id="arquivo" accept=".xlsx,.xls,.csv" style="width:auto">
       <div id="previa"></div>
@@ -835,7 +859,8 @@ function telaExcel() {
         <label class="botao secundario">Restaurar cópia<input type="file" id="restaurar" accept=".json,application/json" hidden></label></div>
     </div>`
         : ""
-    }`;
+    }
+    <p style="margin-top:24px"><a href="#/auditoria">Ver histórico de acessos e alterações</a></p>`;
 
   if (local) {
     local.ultimoBackup().then((d) => {
@@ -940,7 +965,7 @@ function rotear() {
 async function rotearAgora() {
   const [, rota = "agenda", id] = location.hash.replace(/^#/, "").split("/");
   document.querySelectorAll("#menu a").forEach((a) =>
-    a.classList.toggle("ativo", a.dataset.rota === rota || (rota === "paciente" && a.dataset.rota === "pacientes")),
+    a.classList.toggle("ativo", a.dataset.rota === rota || (rota === "paciente" && a.dataset.rota === "pacientes") || (rota === "auditoria" && a.dataset.rota === "excel")),
   );
   sinalTela();
   conteudo.innerHTML = '<p class="carregando">Carregando…</p>';

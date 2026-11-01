@@ -87,7 +87,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .sessao { border-left: 3px solid var(--primaria); background: var(--fundo); border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; font-size: 13px; }
 .sessao .hora { font-weight: 700; }
 .sessao select { font-size: 12px; padding: 2px 4px; margin-top: 4px; }
-.sessao .acoes-sessao { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.sessao .acoes-sessao { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
+.sessao .acoes-sessao button { border: 0; background: none; color: var(--primaria); padding: 0; font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
 .sessao.realizado { border-left-color: var(--ok); }
 .sessao.faltou { border-left-color: var(--alerta); }
 .sessao.cancelado { border-left-color: var(--borda); opacity: .6; text-decoration: line-through; }
@@ -122,6 +123,10 @@ dialog h2 { margin-top: 0; }
 
 .faixa-backup { background: var(--alerta); color: #fff; padding: 8px 16px; text-align: center; font-size: 14px; }
 .faixa-backup a { color: #fff; font-weight: 700; margin-left: 8px; }
+.dica { background: var(--painel); border: 1px dashed var(--borda); border-radius: var(--raio); padding: 8px 12px; color: var(--suave); }
+.tipo-registro { font-weight: 600; color: var(--primaria); }
+.evolucao[data-tipo="demanda"] { border-left: 3px solid var(--primaria); }
+.evolucao[data-tipo="encerramento"] { border-left: 3px solid var(--suave); }
 .erro { color: var(--perigo); }
 .suave { color: var(--suave); }
 .carregando { color: var(--suave); }

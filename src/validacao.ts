@@ -91,3 +91,4 @@ export const FORMAS_PAGAMENTO = [
   "outro",
 ] as const;
 export const STATUS_PAGAMENTO = ["pago", "pendente", "cancelado"] as const;
+export const TIPOS_REGISTRO = ["evolucao", "demanda", "encaminhamento", "encerramento", "documento", "outro"] as const;

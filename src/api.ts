@@ -9,6 +9,7 @@ import {
   STATUS_AGENDAMENTO,
   STATUS_PAGAMENTO,
   texto,
+  TIPOS_REGISTRO,
 } from "./validacao";
 
 type Obj = Record<string, unknown>;
@@ -396,6 +397,7 @@ export async function criarEvolucao(ctx: Ctx) {
   await pacienteExiste(ctx, pid);
   const b = await corpo(ctx);
   const textoEv = texto(b, "texto", { obrigatorio: true, max: 50000 })!;
+  const tipo = opcao(b, "tipo", TIPOS_REGISTRO, "evolucao");
   const dataAt = data(b, "data_atendimento", true)!;
   const agId = inteiro(b, "agendamento_id", { min: 1 });
   const retifica = inteiro(b, "retifica_id", { min: 1 });
@@ -405,9 +407,9 @@ export async function criarEvolucao(ctx: Ctx) {
   }
   const [r] = await ctx.env.DB.batch([
     ctx.env.DB.prepare(
-      `INSERT INTO evolucoes (paciente_id, agendamento_id, data_atendimento, texto, retifica_id, autor_email)
-       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
-    ).bind(pid, agId, dataAt, textoEv, retifica, ctx.usuario),
+      `INSERT INTO evolucoes (paciente_id, agendamento_id, tipo, data_atendimento, texto, retifica_id, autor_email)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    ).bind(pid, agId, tipo, dataAt, textoEv, retifica, ctx.usuario),
     auditoria(ctx, retifica ? "retificar" : "criar", "evolucao", pid),
   ]);
   return json(r.results[0], 201);

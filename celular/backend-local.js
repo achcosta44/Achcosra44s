@@ -147,6 +147,7 @@
   const STATUS_AG = ["agendado", "confirmado", "realizado", "faltou", "cancelado"];
   const FORMAS = ["pix", "dinheiro", "cartao_credito", "cartao_debito", "transferencia", "convenio", "outro"];
   const STATUS_PAG = ["pago", "pendente", "cancelado"];
+  const TIPOS_REGISTRO = ["evolucao", "demanda", "encaminhamento", "encerramento", "documento", "outro"];
 
   // ---------------------------------------------------------- pacientes
   function camposPaciente(b) {
@@ -292,6 +293,7 @@
   async function criarEvolucao(pid, b) {
     await pacienteOuErro(pid);
     const textoEv = texto(b, "texto", { obrigatorio: true, max: 50000 });
+    const tipo = opcao(b, "tipo", TIPOS_REGISTRO, "evolucao");
     const dataAt = data(b, "data_atendimento", true);
     const agId = inteiro(b, "agendamento_id", { min: 1 });
     const retifica = inteiro(b, "retifica_id", { min: 1 });
@@ -300,9 +302,9 @@
       if (!orig || orig.paciente_id !== pid) throw new ErroHttp(400, "Evolução a retificar não encontrada para este paciente");
     }
     const r = await inserir("evolucoes", {
-      paciente_id: pid, agendamento_id: agId, data_atendimento: dataAt, texto: textoEv, retifica_id: retifica, autor_email: USUARIO, criado_em: agora(),
+      paciente_id: pid, agendamento_id: agId, tipo, data_atendimento: dataAt, texto: textoEv, retifica_id: retifica, autor_email: USUARIO, criado_em: agora(),
     });
-    await auditar(retifica ? "retificar" : "criar", "evolucao", pid);
+    await auditar(retifica ? "retificar" : "criar", "registro do prontuário", pid, tipo);
     return r;
   }
 
