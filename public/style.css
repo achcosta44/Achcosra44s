@@ -134,12 +134,104 @@ dialog h2 { margin-top: 0; }
 .aviso.visivel { opacity: 1; }
 .aviso.falha { background: var(--perigo); color: #fff; }
 
+/* ---------- toque e componentes comuns ---------- */
+html { -webkit-text-size-adjust: 100%; }
+body { -webkit-tap-highlight-color: transparent; }
+button, a, select, input, label { touch-action: manipulation; }
+.barra-agenda h1, .periodo { margin: 0; }
+.so-cel { display: none; }
+.dias-chips { display: none; }
+.sessao-topo { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.sessao-info { font-size: 12px; }
+
+/* ---------- celular ---------- */
 @media (max-width: 700px) {
-  .topo { gap: 10px; }
+  :root { --barra-inferior: calc(60px + env(safe-area-inset-bottom)); }
+  body { font-size: 16px; padding-bottom: var(--barra-inferior); }
+  .so-pc { display: none; }
+  .so-cel { display: inline; }
+
+  /* topo enxuto + menu fixo embaixo, ao alcance do polegar */
+  .topo { padding: 10px 16px; position: sticky; top: 0; z-index: 5; }
   .usuario { display: none; }
-  .semana { grid-template-columns: 1fr; }
-  .dia { min-height: 0; }
-  main { padding: 14px 12px 60px; }
+  #menu {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+    background: var(--painel); border-top: 1px solid var(--borda);
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  }
+  #menu a { text-align: center; padding: 12px 4px; font-size: 14px; border-radius: var(--raio); }
+  #menu a.ativo { color: var(--primaria); background: var(--fundo); }
+  .faixa-backup { font-size: 13px; padding: 6px 12px; }
+
+  main { padding: 12px 12px 24px; }
+  h1 { font-size: 20px; margin-bottom: 12px; }
+
+  /* campos com 16px: o iPhone não dá zoom ao tocar */
+  input, select, textarea { font-size: 16px; padding: 10px 12px; min-height: 44px; }
+  textarea { min-height: 180px; }
+  button, .botao { min-height: 40px; padding: 8px 14px; }
+  button.pequeno { min-height: 32px; }
+  .barra { gap: 8px; }
+  .barra input[type=search], .barra input[type=month] { flex: 1 1 100%; width: 100%; }
+
+  /* formulário em tela cheia, com botões sempre visíveis */
+  dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; border-radius: 0; }
+  dialog form { display: flex; flex-direction: column; height: 100%; }
+  #dialogo-titulo { margin: 0; padding: 16px; border-bottom: 1px solid var(--borda); font-size: 18px; }
+  #dialogo-campos { flex: 1; overflow-y: auto; padding: 16px; -webkit-overflow-scrolling: touch; }
+  #dialogo-erro { margin: 0 16px; }
+  dialog .acoes { margin: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--borda); background: var(--painel); }
+  dialog .acoes button { flex: 1; }
+  .campos { grid-template-columns: 1fr; }
+
+  /* agenda: um dia por vez */
+  .barra-agenda { flex-wrap: nowrap; }
+  .barra-agenda button { padding: 8px 12px; }
+  .periodo { font-size: 13px; margin-bottom: 8px; }
+  .dias-chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 12px; }
+  .dias-chips button {
+    display: flex; flex-direction: column; align-items: center; gap: 0; padding: 6px 0; min-height: 0;
+    background: var(--painel); color: var(--texto); border: 1px solid var(--borda); line-height: 1.2;
+  }
+  .dias-chips button span { font-size: 12px; color: var(--suave); }
+  .dias-chips button strong { font-size: 17px; }
+  .dias-chips button small { font-size: 11px; color: var(--suave); }
+  .dias-chips button.hoje { border-color: var(--primaria); }
+  .dias-chips button.sel { background: var(--primaria); border-color: var(--primaria); color: var(--primaria-texto); }
+  .dias-chips button.sel span, .dias-chips button.sel small { color: var(--primaria-texto); }
+  .semana { display: block; }
+  .dia { display: none; min-height: 50vh; border: 0; background: transparent; padding: 0; }
+  .dia.selecionado { display: block; }
+  .dia h3 { display: none; }
+  .livre { text-align: center; padding: 40px 0; }
+  .sessao { font-size: 15px; padding: 12px 14px; margin-bottom: 10px; background: var(--painel); border: 1px solid var(--borda); border-left-width: 4px; }
+  .sessao .hora { font-size: 17px; }
+  .sessao-info { font-size: 13px; }
+  .sessao select { font-size: 15px; min-height: 40px; margin-top: 8px; }
+  .sessao .acoes-sessao { gap: 0; margin-top: 8px; border-top: 1px solid var(--borda); padding-top: 4px; }
+  .sessao .acoes-sessao button { flex: 1; min-height: 40px; font-size: 14px; text-decoration: none; }
+
+  /* tabelas viram cartões */
+  table.responsiva, table.responsiva tbody { display: block; border: 0; background: transparent; }
+  table.responsiva thead { display: none; }
+  table.responsiva tr { display: block; background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 8px 12px; margin-bottom: 8px; }
+  table.responsiva td { display: flex; justify-content: space-between; gap: 12px; border: 0; padding: 4px 0; text-align: right; }
+  table.responsiva td::before { content: attr(data-rotulo); color: var(--suave); font-size: 13px; text-align: left; flex-shrink: 0; }
+  table.responsiva td:first-child { font-weight: 600; justify-content: flex-start; text-align: left; font-size: 16px; }
+  table.responsiva td:first-child::before { content: none; }
+  .barra label { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+  .barra label input[type=checkbox] { min-height: 0; width: 20px; height: 20px; }
+  table.responsiva td:empty, table.responsiva td:not([data-rotulo]) { display: none; }
+  table.responsiva td[data-rotulo=""]::before { content: none; }
+  .tabela-rolagem { overflow: visible; }
+
+  .indicadores { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .indicador .valor { font-size: 19px; }
+  .abas { overflow-x: auto; flex-wrap: nowrap; }
+  .abas button { white-space: nowrap; min-height: 44px; }
+  .evolucao { padding: 12px; }
+  .aviso { bottom: calc(var(--barra-inferior) + 12px); }
 }
 @media print {
   .topo, .barra, .abas, button { display: none !important; }

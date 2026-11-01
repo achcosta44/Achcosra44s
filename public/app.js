@@ -145,7 +145,10 @@ function formulario(titulo, campos, valores, aoSalvar) {
   };
   $("#dialogo-cancelar").onclick = () => dlg.close();
   dlg.showModal();
-  $("input, select, textarea", dlg)?.focus();
+  $("#dialogo-form").scrollTop = 0;
+  // No celular, não abrir teclado/seletor sozinho ao abrir o formulário.
+  if (matchMedia("(pointer: fine)").matches && !navigator.maxTouchPoints) $("input, select, textarea", dlg)?.focus();
+  else document.activeElement?.blur();
 }
 
 /** Cria agendamento; em caso de conflito pergunta se quer manter mesmo assim. */
@@ -278,54 +281,92 @@ function novaEvolucao(pacienteId, valores = {}, aoSalvar) {
 const semanaDeHoje = () => (new Date().getDay() === 0 ? somarDias(hoje(), 1) : segundaDaSemana(hoje()));
 let semanaAtual = semanaDeHoje();
 
+let diaSelecionado = null; // usado no celular (um dia por vez)
+
 async function telaAgenda() {
+  const y = scrollY;
   const de = semanaAtual;
   const ate = somarDias(de, 5);
-  conteudo.innerHTML = `
-    <div class="barra">
-      <h1 style="margin:0">Agenda</h1>
-      <span class="espaco"></span>
-      <button class="secundario" id="ant">‹ Semana anterior</button>
-      <button class="secundario" id="hj">Hoje</button>
-      <button class="secundario" id="prox">Próxima semana ›</button>
-      <button id="novo">+ Agendar</button>
-    </div>
-    <p class="suave">${fmtData(de)} a ${fmtData(ate)}</p>
-    <div class="semana" id="semana"><p class="carregando">Carregando…</p></div>`;
-  $("#ant").onclick = () => ((semanaAtual = somarDias(semanaAtual, -7)), telaAgenda());
-  $("#prox").onclick = () => ((semanaAtual = somarDias(semanaAtual, 7)), telaAgenda());
-  $("#hj").onclick = () => ((semanaAtual = semanaDeHoje()), telaAgenda());
-  $("#novo").onclick = () => novoAgendamento({}, telaAgenda);
+  const dias = Array.from({ length: 6 }, (_, i) => somarDias(de, i));
+  if (!dias.includes(diaSelecionado)) diaSelecionado = dias.includes(hoje()) ? hoje() : de;
 
+  // Busca antes de desenhar: a tela troca de uma vez, sem piscar nem pular a rolagem.
   const sessoes = await api("GET", `/api/agendamentos?de=${de}&ate=${ate}`);
   const porDia = {};
   for (const s of sessoes) (porDia[s.inicio.slice(0, 10)] ??= []).push(s);
 
-  $("#semana").innerHTML = Array.from({ length: 6 }, (_, i) => {
-    const dia = somarDias(de, i);
-    const lista = porDia[dia] || [];
-    return `<section class="dia ${dia === hoje() ? "hoje" : ""}">
-      <h3>${DIAS[i]} ${fmtData(dia).slice(0, 5)}
-        <button class="pequeno secundario" data-novo="${dia}" title="Agendar neste dia">+</button></h3>
-      ${lista
-        .map(
-          (s) => `<div class="sessao ${esc(s.status)}">
-            <div><span class="hora">${s.inicio.slice(11, 16)}</span> · ${s.duracao_min} min</div>
-            <div><a href="#/paciente/${s.paciente_id}">${esc(s.paciente_nome)}</a></div>
-            ${s.observacoes ? `<div class="suave">${esc(s.observacoes)}</div>` : ""}
-            <select data-status="${s.id}">${Object.entries(STATUS_AG)
-              .map(([k, r]) => `<option value="${k}" ${k === s.status ? "selected" : ""}>${r}</option>`)
-              .join("")}</select>
-            <div class="acoes-sessao">
-              <button class="pequeno secundario" data-evol="${s.id}" title="Registrar no prontuário">Registrar</button>
-              <button class="pequeno secundario" data-pag="${s.id}">Pagar</button>
-              <button class="pequeno secundario" data-remarcar="${s.id}">Remarcar</button>
-            </div>
-          </div>`,
-        )
-        .join("") || '<p class="suave" style="font-size:13px">Livre</p>'}
-    </section>`;
-  }).join("");
+  const cartao = (s) => `<div class="sessao ${esc(s.status)}" data-id="${s.id}">
+      <div class="sessao-topo"><span class="hora">${s.inicio.slice(11, 16)}</span>
+        <a href="#/paciente/${s.paciente_id}">${esc(s.paciente_nome)}</a></div>
+      <div class="suave sessao-info">${s.duracao_min} min${s.observacoes ? ` · ${esc(s.observacoes)}` : ""}</div>
+      <select data-status="${s.id}" aria-label="Situação">${Object.entries(STATUS_AG)
+        .map(([k, r]) => `<option value="${k}" ${k === s.status ? "selected" : ""}>${r}</option>`)
+        .join("")}</select>
+      <div class="acoes-sessao">
+        <button data-evol="${s.id}" title="Registrar no prontuário">Registrar</button>
+        <button data-pag="${s.id}">Pagar</button>
+        <button data-remarcar="${s.id}">Remarcar</button>
+      </div>
+    </div>`;
+
+  conteudo.innerHTML = `
+    <div class="barra barra-agenda">
+      <h1>Agenda</h1>
+      <span class="espaco"></span>
+      <button class="secundario" id="ant" aria-label="Semana anterior">‹<span class="so-pc"> Semana anterior</span></button>
+      <button class="secundario" id="hj">Hoje</button>
+      <button class="secundario" id="prox" aria-label="Próxima semana"><span class="so-pc">Próxima semana </span>›</button>
+      <button id="novo">+ <span class="so-pc">Agendar</span><span class="so-cel">Nova</span></button>
+    </div>
+    <p class="suave periodo">${fmtData(de)} a ${fmtData(ate)}</p>
+    <div class="dias-chips" id="chips">${dias
+      .map((d, i) => {
+        const n = (porDia[d] || []).filter((s) => s.status !== "cancelado").length;
+        return `<button data-dia="${d}" class="${d === diaSelecionado ? "sel" : ""} ${d === hoje() ? "hoje" : ""}">
+          <span>${DIAS[i]}</span><strong>${d.slice(8)}</strong><small>${n || "–"}</small></button>`;
+      })
+      .join("")}</div>
+    <div class="semana" id="semana">${dias
+      .map(
+        (dia, i) => `<section class="dia ${dia === hoje() ? "hoje" : ""} ${dia === diaSelecionado ? "selecionado" : ""}" data-dia="${dia}">
+          <h3>${DIAS[i]} ${fmtData(dia).slice(0, 5)}
+            <button class="pequeno secundario" data-novo="${dia}" title="Agendar neste dia">+</button></h3>
+          ${(porDia[dia] || []).map(cartao).join("") || '<p class="suave livre">Livre</p>'}
+        </section>`,
+      )
+      .join("")}</div>`;
+  scrollTo(0, y);
+
+  $("#ant").onclick = () => ((semanaAtual = somarDias(semanaAtual, -7)), (diaSelecionado = null), telaAgenda());
+  $("#prox").onclick = () => ((semanaAtual = somarDias(semanaAtual, 7)), (diaSelecionado = null), telaAgenda());
+  $("#hj").onclick = () => ((semanaAtual = semanaDeHoje()), (diaSelecionado = null), telaAgenda());
+  $("#novo").onclick = () => novoAgendamento({ inicio: `${diaSelecionado}T08:00` }, telaAgenda);
+
+  const selecionar = (d) => {
+    diaSelecionado = d;
+    document.querySelectorAll("#chips button").forEach((b) => b.classList.toggle("sel", b.dataset.dia === d));
+    document.querySelectorAll("#semana .dia").forEach((s) => s.classList.toggle("selecionado", s.dataset.dia === d));
+  };
+  $("#chips").onclick = (ev) => {
+    const b = ev.target.closest("button[data-dia]");
+    if (b) selecionar(b.dataset.dia);
+  };
+  // Arrastar para o lado troca de dia (no celular)
+  let x0 = null, y0 = null;
+  $("#semana").addEventListener("touchstart", (ev) => ((x0 = ev.touches[0].clientX), (y0 = ev.touches[0].clientY)), { passive: true });
+  $("#semana").addEventListener("touchend", (ev) => {
+    if (x0 === null) return;
+    const dx = ev.changedTouches[0].clientX - x0, dy = ev.changedTouches[0].clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const i = dias.indexOf(diaSelecionado) + (dx < 0 ? 1 : -1);
+    if (i >= 0 && i < dias.length) selecionar(dias[i]);
+    else {
+      semanaAtual = somarDias(semanaAtual, dx < 0 ? 7 : -7);
+      diaSelecionado = somarDias(semanaAtual, dx < 0 ? 0 : 5);
+      telaAgenda();
+    }
+  }, { passive: true });
 
   const achar = (id) => sessoes.find((s) => s.id === Number(id));
   $("#semana").onclick = async (ev) => {
@@ -358,14 +399,19 @@ async function telaAgenda() {
       );
     }
   };
+  // Mudar a situação atualiza só o cartão, sem redesenhar a agenda.
   $("#semana").onchange = async (ev) => {
     const id = ev.target.dataset.status;
     if (!id) return;
+    const card = ev.target.closest(".sessao");
+    const anterior = achar(id).status;
     try {
       await api("PUT", `/api/agendamentos/${id}`, { status: ev.target.value });
+      achar(id).status = ev.target.value;
+      card.className = `sessao ${ev.target.value}`;
       avisar("Situação atualizada");
-      telaAgenda();
     } catch (e) {
+      ev.target.value = anterior;
       avisar(e.message, true);
     }
   };
@@ -703,6 +749,7 @@ async function telaFinanceiro() {
 const SHEETJS = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
 function carregarSheetJS() {
   if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (window.__carregarXLSX) return Promise.resolve(window.__carregarXLSX());
   return new Promise((ok, falha) => {
     const s = document.createElement("script");
     s.src = SHEETJS;
@@ -968,7 +1015,8 @@ async function rotearAgora() {
     a.classList.toggle("ativo", a.dataset.rota === rota || (rota === "paciente" && a.dataset.rota === "pacientes") || (rota === "auditoria" && a.dataset.rota === "excel")),
   );
   sinalTela();
-  conteudo.innerHTML = '<p class="carregando">Carregando…</p>';
+  scrollTo(0, 0);
+  const lento = setTimeout(() => (conteudo.innerHTML = '<p class="carregando">Carregando…</p>'), 250);
   try {
     if (rota === "pacientes") await telaPacientes();
     else if (rota === "paciente" && id) await telaPaciente(Number(id));
@@ -976,12 +1024,26 @@ async function rotearAgora() {
     else if (rota === "excel") telaExcel();
     else if (rota === "auditoria") await telaAuditoria();
     else await telaAgenda();
+    clearTimeout(lento);
   } catch (e) {
+    clearTimeout(lento);
     conteudo.innerHTML = `<p class="erro">${esc(e.message)}</p>${
       e.status === 401 ? '<p><a href="/">Entrar novamente</a></p>' : ""
     }`;
   }
 }
+
+// No celular as tabelas viram cartões: cada célula recebe o nome da coluna.
+function rotularTabelas() {
+  conteudo.querySelectorAll("table:not([data-rotulada])").forEach((t) => {
+    const cab = [...t.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+    if (!cab.length) return;
+    t.dataset.rotulada = "1";
+    t.classList.add("responsiva");
+    t.querySelectorAll("tbody tr").forEach((tr) => [...tr.children].forEach((td, i) => cab[i] && (td.dataset.rotulo = cab[i])));
+  });
+}
+new MutationObserver(rotularTabelas).observe(conteudo, { childList: true, subtree: true });
 
 window.addEventListener("hashchange", rotear);
 api("GET", "/api/eu")

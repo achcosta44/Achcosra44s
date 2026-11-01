@@ -42,8 +42,12 @@ ${css}
 );
 substituir(
   '<script src="/app.js" type="module"></script>',
+  // A biblioteca de Excel fica dentro de uma função: só é executada quando a tela de Backup a usa.
   `<script>
+window.__carregarXLSX = function () {
 ${seguro(xlsx)}
+;window.__carregarXLSX = null; return XLSX;
+};
   </script>
   <script>
 ${seguro(backend)}
