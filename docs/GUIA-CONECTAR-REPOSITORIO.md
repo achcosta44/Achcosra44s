@@ -1,124 +1,86 @@
-# Guia para o Claude: ajudar o usuário a se conectar a este repositório
+# Guia para o Claude: obter este projeto sozinho e ajudar o usuário
 
-**Para quem é este arquivo:** para você, Claude, que vai ajudar uma pessoa a acessar e editar o app "Consultório". A pessoa recebeu este guia do dono do projeto. Ela pode **não ser programadora**. Conduza passo a passo, em português simples, **um passo por vez**, e confirme que cada passo deu certo antes de seguir.
+**Para você, Claude.** A pessoa que te enviou este guia **não entende de programação, GitHub ou terminal**. Ela quer apenas que você pegue o projeto, entenda e faça as alterações que ela pedir.
 
----
+**Faça tudo você mesmo.** Não peça para ela criar conta no GitHub, clonar, instalar nada nem dar permissões. Fale com ela em português simples, sem termos técnicos, e só pergunte o que for realmente necessário: o que ela quer mudar no app.
 
-## Dados do projeto
+O repositório é **público**: dá para baixar sem login, conta ou token.
 
 | Item | Valor |
 |---|---|
-| Repositório | `achcosta44/Achcosra44s`: https://github.com/achcosta44/Achcosra44s |
-| Visibilidade | **Público**: qualquer pessoa pode ler e clonar. Para **gravar** é preciso ser colaborador (ou usar fork + pull request). |
-| Branch principal | `claude/estrutura-inicial` (é o branch padrão do repositório) |
-| Dono | usuário do GitHub `achcosta44` |
-| Documento técnico | `CLAUDE.md`, na raiz. **Leia-o inteiro antes de alterar qualquer coisa.** |
-
-O repositório **não contém dados de pacientes nem senhas**. Os dados do app ficam no navegador de cada aparelho.
+| Repositório | https://github.com/achcosta44/Achcosra44s |
+| Branch | `claude/estrutura-inicial` (é o padrão) |
+| Clonar | `git clone https://github.com/achcosta44/Achcosra44s.git` |
+| ZIP | https://github.com/achcosta44/Achcosra44s/archive/refs/heads/claude/estrutura-inicial.zip |
+| Arquivo bruto | `https://raw.githubusercontent.com/achcosta44/Achcosra44s/claude/estrutura-inicial/<caminho>` |
 
 ---
 
-## Passo 0: descubra a situação da pessoa (pergunte antes de tudo)
+## Passo 1: obtenha o projeto (escolha conforme suas ferramentas)
 
-Faça estas perguntas, de forma simples:
-
-1. **Onde você está falando comigo?**
-   - (a) em claude.ai/code ou na aba **Code** do app Claude;
-   - (b) no Claude Code instalado no computador (terminal, app Desktop ou editor);
-   - (c) numa conversa comum do claude.ai.
-2. **Você tem conta no GitHub?** Se tiver, qual é o nome de usuário?
-3. **Você vai só olhar e testar, ou vai fazer alterações para devolver ao dono?**
-
-Com as respostas, siga o caminho A, B ou C. Se a pessoa for fazer alterações, siga também a seção "Permissão para gravar".
-
----
-
-## Caminho A: Claude Code na web (claude.ai/code ou aba Code do app)
-
-Exige plano **Pro, Max, Ultra, Team** ou **Enterprise** com acesso a sessões na nuvem.
-
-1. A pessoa cria uma conta gratuita no GitHub (github.com), se ainda não tiver.
-2. Em **claude.ai/code**, ela conecta o GitHub quando o Claude pedir. Na primeira vez, aparece a autorização do **Claude GitHub App** (https://github.com/apps/claude). Ela autoriza.
-3. Ela inicia uma sessão escolhendo o repositório **`achcosta44/Achcosra44s`**. Por ser público, ele é acessível mesmo sem o app instalado nele. Se não aparecer na lista, ela pode colar o endereço https://github.com/achcosta44/Achcosra44s na conversa e pedir para o Claude adicioná-lo.
-4. Pronto: a sessão já tem o código clonado. **Leia o `CLAUDE.md`.**
-
-O ambiente padrão dessas sessões (com acesso à rede "Trusted") permite `npm install`. O Chromium e o Playwright costumam vir pré-instalados, então `npm run test:offline` deve funcionar direto.
-
-Documentação oficial: https://code.claude.com/docs/en/claude-code-on-the-web
-
----
-
-## Caminho B: Claude Code no computador da pessoa
-
-Pré-requisitos (ajude a instalar se faltar):
-- **Git**: https://git-scm.com
-- **Node.js 20 ou superior**, versão LTS: https://nodejs.org
-
-Comandos (rode você mesmo, se tiver acesso ao terminal, ou passe à pessoa um de cada vez):
+**Se você consegue executar comandos** (Claude Code no computador, claude.ai/code, app Desktop ou qualquer ambiente com terminal):
 
 ```bash
 git clone https://github.com/achcosta44/Achcosra44s.git
 cd Achcosra44s
-npm install
-npm run build:celular          # gera dist/consultorio.html
 ```
 
-Para os testes automáticos:
+- Se o `git` não existir, baixe o ZIP com `curl -L -o projeto.zip <link do ZIP acima>` e descompacte.
+- Em sessões do claude.ai/code, se o clone direto for bloqueado e você tiver uma ferramenta para adicionar repositórios à sessão, use-a com `owner: achcosta44` e `repo: Achcosra44s`, acesso de leitura.
+
+**Se você só consegue ler páginas da web** (conversa comum no claude.ai, com busca ou leitura de páginas ativada), leia os arquivos pelo link bruto. Comece por:
+
+1. `.../CLAUDE.md`, obrigatório;
+2. `.../public/app.js` (telas), `.../public/style.css` (aparência) e `.../celular/backend-local.js` (dados e regras), conforme o pedido.
+
+Exemplo de link: https://raw.githubusercontent.com/achcosta44/Achcosra44s/claude/estrutura-inicial/CLAUDE.md
+
+**Se nada disso funcionar**, só então peça à pessoa que anexe o arquivo `Consultorio.zip` (ou a pasta `codigo-fonte/`) que ela recebeu do dono. Explique assim: "pode me mandar o arquivo Consultorio.zip que você recebeu?".
+
+## Passo 2: entenda o projeto
+
+Leia o **`CLAUDE.md` inteiro** antes de qualquer alteração. Ele explica:
+- quem é o usuário final (um psicólogo);
+- as decisões já tomadas;
+- a arquitetura e o modelo de dados;
+- as **regras invioláveis**, como: prontuário nunca é editado nem apagado, só retificado;
+- os comandos e testes.
+
+## Passo 3: prepare e teste (se você executa comandos)
 
 ```bash
-npm i -D playwright && npx playwright install chromium
-npm run test:offline
+npm install
+npm run build:celular        # gera dist/consultorio.html, o app que o usuário abre
+npm run test:offline         # teste completo; se faltar o Playwright:
+                             #   npm i -D playwright && npx playwright install chromium
 ```
 
-Depois, abra o Claude Code dentro da pasta `Achcosra44s`. O `CLAUDE.md` é carregado automaticamente.
+Depois de cada alteração: `npm run build:celular` → `npm run test:offline`. Se mexeu em gravação de dados ou sincronização, rode também o `npm run test:sync` (instruções no `CLAUDE.md`, seção 10).
+
+## Passo 4: entregue o resultado sem exigir nada técnico da pessoa
+
+- **Entregue o arquivo `dist/consultorio.html` atualizado** para ela baixar. Diga em uma frase o que mudou e que ela deve **substituir o arquivo antigo, no mesmo lugar onde ele estava**. Se mudar de lugar, o app abre vazio, porque os dados ficam ligados ao local do arquivo.
+- Recomende **gerar uma cópia de segurança** (menu Backup) antes de trocar o arquivo.
+- **Para o dono do projeto** (`achcosta44`) receber as alterações, entregue também:
+  - um **arquivo de alterações**: `git diff > alteracoes.patch`, se você clonou; ou os arquivos alterados completos;
+  - ou um **ZIP do projeto alterado**.
+
+  A pessoa só precisa encaminhar esse arquivo ao dono.
+- **Não tente gravar no repositório original** (`git push`). Você não tem permissão, e a pessoa não precisa ter conta no GitHub. Só faça isso se o dono a tiver adicionado como colaboradora **e** ela pedir.
+
+## Como conversar com a pessoa
+
+- Pergunte **o que ela quer mudar ou o que está incomodando** no app. Não pergunte sobre ferramentas.
+- Explique o resultado pelo uso, não pelo código. Exemplo: "agora o botão de pagar aparece na ficha do paciente".
+- Antes de qualquer mudança que possa afetar dados já guardados, peça que ela faça uma cópia de segurança. São mudanças na estrutura dos dados, na restauração ou na sincronização.
+- **Nunca peça senhas, tokens ou chaves na conversa.**
+- **Nunca peça nem use dados reais de pacientes.** Para testar, use `exemplos/dados-de-teste.json`, que é fictício: no app, Backup → Restaurar cópia.
 
 ---
 
-## Caminho C: conversa comum no claude.ai (sem Claude Code)
+## Anexo: se um dia a pessoa precisar gravar direto no repositório
 
-Neste modo você **não executa comandos, não roda testes e não grava no GitHub**. Você só lê os arquivos e devolve versões editadas.
+Só se o dono e a pessoa quiserem. Normalmente **não é necessário**.
 
-1. A pessoa baixa o código: em https://github.com/achcosta44/Achcosra44s, botão **Code → Download ZIP**. Outra opção é usar a pasta `codigo-fonte/` do `Consultorio.zip`, se recebeu do dono.
-2. Ela anexa na conversa:
-   - `CLAUDE.md`, sempre;
-   - os arquivos que vão mudar: na maioria das vezes `public/app.js`, `public/style.css` e `celular/backend-local.js`.
-   - Se o claude.ai dela tiver integração com o GitHub, ela também pode adicionar o repositório por ali.
-3. Você devolve os arquivos completos alterados. Lembre a pessoa: depois de trocar os arquivos, alguém precisa rodar `npm run build:celular` para gerar o novo `dist/consultorio.html`. Sem isso, o app que o usuário abre não muda.
-
-Recomende o Caminho A ou B se a pessoa for fazer mais do que ajustes pequenos.
-
----
-
-## Permissão para gravar (enviar alterações ao repositório)
-
-Ler é livre. Para **gravar**, há duas opções:
-
-1. **Colaborador (mais simples):** o dono (`achcosta44`) entra em https://github.com/achcosta44/Achcosra44s → **Settings → Collaborators → Add people** e informa o usuário do GitHub da pessoa. Ela recebe um convite por e-mail e precisa **aceitá-lo**. Depois disso, o Claude dela pode fazer `push` para um branch novo.
-2. **Fork + pull request (sem depender do dono para começar):** a pessoa cria uma cópia (**Fork**) no GitHub dela, trabalha nela e, no fim, abre um **pull request** para `achcosta44/Achcosra44s`, que o dono aprova.
-
-**Regras ao gravar:**
-- Trabalhe num **branch novo**, por exemplo `ajuste-agenda`. Não grave direto em `claude/estrutura-inicial` sem o dono pedir.
-- Antes de enviar, siga a rotina: `npm run build:celular`, depois `npm run test:offline`, depois `npm run test:sync` se mexeu em sincronização ou em gravação de dados (ver `CLAUDE.md`, seção 10).
-- Inclua o `dist/consultorio.html` regenerado no commit. É o arquivo que o usuário final usa.
-- Mensagens de commit em português.
-
----
-
-## Problemas comuns
-
-| Sintoma | O que fazer |
-|---|---|
-| O repositório não aparece na lista do claude.ai/code | Cole o endereço https://github.com/achcosta44/Achcosra44s na conversa e peça para adicioná-lo. Ou instale o Claude GitHub App em https://github.com/apps/claude. |
-| `push` recusado (403 / permission denied) | A pessoa ainda não é colaboradora, ou não aceitou o convite. Use a seção "Permissão para gravar" ou trabalhe com fork. |
-| `npm install` falha por rede | Na nuvem: verifique o acesso à rede do ambiente. No computador: verifique a internet e o proxy. |
-| `npm run test:sync` falha com "Limite de cofres" | Limpe o banco local do servidor de teste (comando no `CLAUDE.md`, seção 10). |
-| O app abre vazio depois de atualizar | Isso não é erro do código: os dados ficam no navegador e no caminho do arquivo. Mova o novo `consultorio.html` para o mesmo local do anterior, ou restaure a cópia de segurança. |
-
----
-
-## Cuidados que você deve manter
-
-- **Nunca peça para colar senhas, tokens ou chaves na conversa.** Credenciais (por exemplo, o token da Cloudflare) vão nas configurações do ambiente ou do sistema, nunca no chat.
-- **Nunca coloque dados reais de pacientes** no repositório, em commits ou em mensagens. Para testar, use `exemplos/dados-de-teste.json`, que é fictício.
-- Antes de qualquer alteração que possa apagar ou substituir dados do app (estrutura do banco, restauração, sincronização), avise e recomende uma cópia de segurança.
-- Respeite as regras invioláveis do `CLAUDE.md` (seção 6), especialmente: **prontuário não se edita nem se apaga, só se retifica.**
+- O dono adiciona a pessoa como colaboradora em https://github.com/achcosta44/Achcosra44s → **Settings → Collaborators → Add people**. Ela aceita o convite que chega por e-mail.
+- Você então trabalha num **branch novo**, inclui o `dist/consultorio.html` regenerado no commit e escreve as mensagens em português.
